@@ -78,6 +78,7 @@
 #include <uORB/topics/vehicle_global_velocity_setpoint.h>
 #include <uORB/topics/vehicle_local_position_setpoint.h>
 #include <uORB/topics/vehicle_land_detected.h>
+#include <uORB/topics/vehicle_command.h>
 
 #include <systemlib/systemlib.h>
 #include <systemlib/mavlink_log.h>
@@ -138,6 +139,7 @@ private:
 	int		_pos_sp_triplet_sub;		/**< position setpoint triplet */
 	int		_local_pos_sp_sub;		/**< offboard local position setpoint */
 	int		_global_vel_sp_sub;		/**< offboard global velocity setpoint */
+	int 	_vehicle_command_sub;	/**< vehicle command subscription */
 
 	orb_advert_t	_att_sp_pub;			/**< attitude setpoint publication */
 	orb_advert_t	_local_pos_sp_pub;		/**< vehicle local position setpoint publication */
@@ -156,6 +158,7 @@ private:
 	struct position_setpoint_triplet_s		_pos_sp_triplet;	/**< vehicle global position setpoint triplet */
 	struct vehicle_local_position_setpoint_s	_local_pos_sp;		/**< vehicle local position setpoint */
 	struct vehicle_global_velocity_setpoint_s	_global_vel_sp;		/**< vehicle global velocity setpoint */
+	struct vehicle_command_s 					_vehicle_command;	/**< vehicle_command */
 
 	control::BlockParamFloat _manual_thr_min;
 	control::BlockParamFloat _manual_thr_max;
@@ -268,6 +271,13 @@ private:
 
 	float _R_circle;					/**< desired radius for circle mode */
 	math::Vector<2> _circle_orig;		/**< local origin of circle in circle mode */
+	bool _was_pos_ctrl_mode;			/**< previous iteration was in position control mode */
+
+	// position control sub-modes
+	enum MAN_CTRL_MODE {
+		MODE_POS_CTRL = 0,
+		MODE_CIRCLE,
+	} _posctrl_sub_mode;
 
 	/**
 	 * Update our local parameter cache.
@@ -373,6 +383,7 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_local_pos_sub(-1),
 	_pos_sp_triplet_sub(-1),
 	_global_vel_sp_sub(-1),
+	_vehicle_command_sub(-1),
 
 	/* publications */
 	_att_sp_pub(nullptr),
@@ -390,6 +401,7 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_pos_sp_triplet{},
 	_local_pos_sp{},
 	_global_vel_sp{},
+	_vehicle_command{},
 	_manual_thr_min(this, "MANTHR_MIN"),
 	_manual_thr_max(this, "MANTHR_MAX"),
 	_vel_x_deriv(this, "VELD"),
@@ -413,7 +425,8 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_acc_z_lp(0),
 	_takeoff_thrust_sp(0.0f),
 	control_vel_enabled_prev(false),
-	_R_circle(3.0f)
+	_R_circle(3.0f),
+	_was_pos_ctrl_mode(false)
 {
 	// Make the quaternion valid for control state
 	_ctrl_state.q[0] = 1.0f;
@@ -689,6 +702,23 @@ MulticopterPositionControl::poll_subscriptions()
 	if (updated) {
 		orb_copy(ORB_ID(vehicle_local_position), _local_pos_sub, &_local_pos);
 	}
+
+	orb_check(_vehicle_command_sub, &updated);
+
+	if (updated) {
+		orb_copy(ORB_ID(vehicle_command), _vehicle_command_sub, &_vehicle_command);
+
+		// update sub-mode for position control mode
+		if (_vehicle_command.command == vehicle_command_s::VEHICLE_CMD_POSCTRL_MODE) {
+			if ((int)_vehicle_command.param1 == 0) {
+				_posctrl_sub_mode = MODE_POS_CTRL;
+			} else if ((int)_vehicle_command.param1 == 1) {
+				_posctrl_sub_mode = MODE_CIRCLE;
+
+				// XXX Need to pass circle origin and radius here
+			}
+		}
+	}
 }
 
 float
@@ -804,19 +834,9 @@ MulticopterPositionControl::limit_pos_sp_offset()
 void
 MulticopterPositionControl::control_manual(float dt)
 {
+	math::Vector<3> req_vel_sp_scaled;	// desired velocity setpoint in global NED frame in m/s
 	math::Vector<3> req_vel_sp; // X,Y in local frame and Z in global (D), in [-1,1] normalized range
 	req_vel_sp.zero();
-
-	if (_control_mode.flag_control_altitude_enabled) {
-		/* set vertical velocity setpoint with throttle stick */
-		req_vel_sp(2) = -scale_control(_manual.z - 0.5f, 0.5f, _params.alt_ctl_dz, _params.alt_ctl_dy); // D
-	}
-
-	if (_control_mode.flag_control_position_enabled) {
-		/* set horizontal velocity setpoint with roll/pitch stick */
-		req_vel_sp(0) = _manual.x;
-		req_vel_sp(1) = _manual.y;
-	}
 
 	if (_control_mode.flag_control_altitude_enabled) {
 		/* reset alt setpoint to current altitude if needed */
@@ -828,28 +848,64 @@ MulticopterPositionControl::control_manual(float dt)
 		reset_pos_sp();
 	}
 
-	/* limit velocity setpoint */
-	float req_vel_sp_norm = req_vel_sp.length();
-
-	if (req_vel_sp_norm > 1.0f) {
-		req_vel_sp /= req_vel_sp_norm;
+	if (_posctrl_sub_mode != MODE_CIRCLE) {
+		// reset the radius used for circle mode to invalid
+		_R_circle = -1.0f;
 	}
 
-	/* _req_vel_sp scaled to 0..1, scale it to max speed and rotate around yaw */
-	math::Matrix<3, 3> R_yaw_sp;
-	R_yaw_sp.from_euler(0.0f, 0.0f, _att_sp.yaw_body);
-	math::Vector<3> req_vel_sp_scaled = R_yaw_sp * req_vel_sp.emult(
-			_params.vel_cruise); // in NED and scaled to actual velocity
 
-	if (_control_mode.flag_control_position_enabled) {
-		float vel_desired = _manual.y * _params.vel_max(0);
+	if (_posctrl_sub_mode == MODE_POS_CTRL) {
+		// standard position control, user commands desired velocities
+		// otherwise drone will hold position
+
+		if (_control_mode.flag_control_position_enabled) {
+			/* set horizontal velocity setpoint with roll/pitch stick */
+			req_vel_sp(0) = _manual.x;
+			req_vel_sp(1) = _manual.y;
+		}
+
+		/* limit velocity setpoint */
+		float req_hor_vel_sp_norm = sqrtf(req_vel_sp(0) * req_vel_sp(0) + req_vel_sp(1) * req_vel_sp(1));
+
+		if (req_hor_vel_sp_norm > 1.0f) {
+			req_vel_sp(0) = req_vel_sp(0) / req_hor_vel_sp_norm;
+			req_vel_sp(1) = req_vel_sp(1) / req_hor_vel_sp_norm;
+		}
+
+		/* _req_vel_sp scaled to 0..1, scale it to max speed and rotate around yaw */
+		math::Matrix<3, 3> R_yaw_sp;
+		R_yaw_sp.from_euler(0.0f, 0.0f, _yaw);
+		req_vel_sp_scaled = R_yaw_sp * req_vel_sp;
+		req_vel_sp_scaled(0) = req_vel_sp(0) * _params.vel_cruise(0);
+		req_vel_sp_scaled(1) = req_vel_sp(1) * _params.vel_cruise(1);
+
+	} else if (_posctrl_sub_mode == MODE_CIRCLE) {
+		// vehicle flies along circle facing the center
+		// user can change command velocity and modify radius
+
+		if (_R_circle < 0.0f) {
+			// just switched into circle mode, set circle radius and origin
+			// if circle mode was activated via command then the radius was already set above
+			_R_circle = 3.0f;
+			_circle_orig(0) = _pos(0) + _R_circle * cosf(_yaw);
+			_circle_orig(1) = _pos(1) + _R_circle * sinf(_yaw);
+		}
+
+		// desired velocity along the circle
+		float vel_desired = _manual.y * _params.vel_cruise(0);
+
+		// user can change radius with pitch stick
 		_R_circle += _manual.x * 2.0f * dt;
 		_R_circle = math::constrain(_R_circle, 3.0f, 100.0f);
 		control_circle(_circle_orig(0), _circle_orig(1), _R_circle, vel_desired, &req_vel_sp_scaled.data[0], &_att_sp.yaw_body);
-	} else {
-		_R_circle = 3.0f;
-		_circle_orig(0) = _pos(0) + _R_circle * cosf(_yaw);
-		_circle_orig(1) = _pos(1) + _R_circle * sinf(_yaw);
+	}
+
+	// altitude control, common for all alitude controlled modes
+	if (_control_mode.flag_control_altitude_enabled) {
+		/* set vertical velocity setpoint with throttle stick */
+		req_vel_sp(2) = -scale_control(_manual.z - 0.5f, 0.5f, _params.alt_ctl_dz, _params.alt_ctl_dy); // D
+		req_vel_sp(2) = math::constrain(req_vel_sp(2), -1.0f, 1.0f);
+		req_vel_sp_scaled(2) = req_vel_sp(2) * _params.vel_cruise(2);
 	}
 
 	/*
@@ -1258,6 +1314,7 @@ MulticopterPositionControl::task_main()
 	_pos_sp_triplet_sub = orb_subscribe(ORB_ID(position_setpoint_triplet));
 	_local_pos_sp_sub = orb_subscribe(ORB_ID(vehicle_local_position_setpoint));
 	_global_vel_sp_sub = orb_subscribe(ORB_ID(vehicle_global_velocity_setpoint));
+	_vehicle_command_sub = orb_subscribe(ORB_ID(vehicle_command));
 
 
 	parameters_update(true);
@@ -1332,6 +1389,16 @@ MulticopterPositionControl::task_main()
 				_reset_alt_sp = true;
 			}
 		}
+
+		bool in_pos_control_mode = _control_mode.flag_control_manual_enabled &&
+				_control_mode.flag_control_position_enabled;
+
+		// by default position control mode should always start in
+		// manual position control submode
+		if (!_was_pos_ctrl_mode && in_pos_control_mode) {
+			_posctrl_sub_mode = MODE_POS_CTRL;
+		}
+		_was_pos_ctrl_mode = in_pos_control_mode;
 
 		//Update previous arming state
 		was_armed = _control_mode.flag_armed;
