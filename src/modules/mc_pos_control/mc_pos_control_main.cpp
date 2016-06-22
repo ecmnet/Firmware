@@ -425,7 +425,7 @@ MulticopterPositionControl::MulticopterPositionControl() :
 	_acc_z_lp(0),
 	_takeoff_thrust_sp(0.0f),
 	control_vel_enabled_prev(false),
-	_R_circle(3.0f),
+	_R_circle(-1.0f),
 	_was_pos_ctrl_mode(false)
 {
 	// Make the quaternion valid for control state
@@ -713,9 +713,10 @@ MulticopterPositionControl::poll_subscriptions()
 			if ((int)_vehicle_command.param1 == 0) {
 				_posctrl_sub_mode = MODE_POS_CTRL;
 			} else if ((int)_vehicle_command.param1 == 1) {
+				// enter circle mode and read circle origin and radius from command
 				_posctrl_sub_mode = MODE_CIRCLE;
-
-				// XXX Need to pass circle origin and radius here
+				map_projection_project(&_ref_pos, _vehicle_command.param5, _vehicle_command.param6, &_circle_orig.data[0], &_circle_orig.data[1]);
+				_R_circle = _vehicle_command.param2;
 			}
 		}
 	}
@@ -898,6 +899,8 @@ MulticopterPositionControl::control_manual(float dt)
 		_R_circle += _manual.x * 2.0f * dt;
 		_R_circle = math::constrain(_R_circle, 3.0f, 100.0f);
 		control_circle(_circle_orig(0), _circle_orig(1), _R_circle, vel_desired, &req_vel_sp_scaled.data[0], &_att_sp.yaw_body);
+		req_vel_sp(0) = _params.vel_cruise(0) > FLT_EPSILON ? req_vel_sp_scaled(0) / _params.vel_cruise(0) : 0.0f;
+		req_vel_sp(1) = _params.vel_cruise(1) > FLT_EPSILON ? req_vel_sp_scaled(1) / _params.vel_cruise(1) : 0.0f;
 	}
 
 	// altitude control, common for all alitude controlled modes
