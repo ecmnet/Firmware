@@ -25,7 +25,7 @@ set(config_module_list
 	drivers/ms5611
 	#drivers/mb12xx
 	#drivers/srf02
-	drivers/sf0x
+	drivers/sf1xx
 	drivers/ll40ls
 	drivers/trone
 	drivers/gps
@@ -34,7 +34,7 @@ set(config_module_list
 	#drivers/hott/hott_telemetry
 	#drivers/hott/hott_sensors
 	drivers/blinkm
-	drivers/airspeed
+	#drivers/airspeed
 	#drivers/frsky_telemetry
 	#drivers/ets_airspeed
 	#drivers/meas_airspeed
