@@ -11,11 +11,10 @@ extern orb_advert_t mavlink_log_pub;
 // measurement it is initialized, we also don't want to deinitialize it because
 // this will throw away a correction before it starts using the data so we
 // set the timeout to 10 seconds
-static const uint32_t 		REQ_VISION_INIT_COUNT = 1;
-static const uint32_t 		VISION_TIMEOUT =    10000000;	// 10 s
+static const uint32_t REQ_VISION_INIT_COUNT = 5;
+static const uint32_t VISION_TIMEOUT = 250000;	// 10 s
 
-void BlockLocalPositionEstimator::visionInit()
-{
+void BlockLocalPositionEstimator::visionInit() {
 	// measure
 	Vector<float, n_y_vision> y;
 
@@ -26,26 +25,31 @@ void BlockLocalPositionEstimator::visionInit()
 
 	// increament sums for mean
 	if (_visionStats.getCount() > REQ_VISION_INIT_COUNT) {
-		mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] vision position init: "
-					     "%5.2f %5.2f %5.2f m std %5.2f %5.2f %5.2f m",
-					     double(_visionStats.getMean()(0)),
-					     double(_visionStats.getMean()(1)),
-					     double(_visionStats.getMean()(2)),
-					     double(_visionStats.getStdDev()(0)),
-					     double(_visionStats.getStdDev()(1)),
-					     double(_visionStats.getStdDev()(2)));
+
+		_visionOrigin(0) = _visionStats.getMean()(0) - _x(X_x);
+		_visionOrigin(1) = _visionStats.getMean()(1) - _x(X_y);
+		_visionOrigin(2) = _visionStats.getMean()(2) - _x(X_z);
+
+		mavlink_and_console_log_info(&mavlink_log_pub,
+				"[lpe] vision position init: "
+						"%5.2f %5.2f %5.2f m std %5.2f %5.2f %5.2f m",
+				double(_visionStats.getMean()(0)),
+				double(_visionStats.getMean()(1)),
+				double(_visionStats.getMean()(2)),
+				double(_visionStats.getStdDev()(0)),
+				double(_visionStats.getStdDev()(1)),
+				double(_visionStats.getStdDev()(2)));
 		_visionInitialized = true;
 		_visionFault = FAULT_NONE;
 
 		if (!_altOriginInitialized) {
 			_altOriginInitialized = true;
-			_altOrigin = 0;
+			_altOrigin = _visionOrigin(2);
 		}
 	}
 }
 
-int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
-{
+int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y) {
 	y.setZero();
 	y(Y_vision_x) = _sub_vision.get().x;
 	y(Y_vision_y) = _sub_vision.get().y;
@@ -55,12 +59,14 @@ int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
 	return OK;
 }
 
-void BlockLocalPositionEstimator::visionCorrect()
-{
+void BlockLocalPositionEstimator::visionCorrect() {
 	// measure
 	Vector<float, n_y_vision> y;
 
 	if (visionMeasure(y) != OK) { return; }
+
+	// make measurement relative to origin
+	y -= _visionOrigin;
 
 	// vision measurement matrix, measures position
 	Matrix<float, n_y_vision, n_x> C;
@@ -72,19 +78,24 @@ void BlockLocalPositionEstimator::visionCorrect()
 	// noise matrix
 	Matrix<float, n_y_vision, n_y_vision> R;
 	R.setZero();
-	R(Y_vision_x, Y_vision_x) = _vision_xy_stddev.get() * _vision_xy_stddev.get();
-	R(Y_vision_y, Y_vision_y) = _vision_xy_stddev.get() * _vision_xy_stddev.get();
+	R(Y_vision_x, Y_vision_x) = _vision_xy_stddev.get()
+			* _vision_xy_stddev.get();
+	R(Y_vision_y, Y_vision_y) = _vision_xy_stddev.get()
+			* _vision_xy_stddev.get();
 	R(Y_vision_z, Y_vision_z) = _vision_z_stddev.get() * _vision_z_stddev.get();
 
 	// vision delayed x
 	uint8_t i_hist = 0;
 
-	if (getDelayPeriods(_vision_delay.get(), &i_hist)  < 0) { return; }
+	if (getDelayPeriods(_vision_delay.get(), &i_hist) < 0) {
+		return;
+	}
 
 	Vector<float, n_x> x0 = _xDelay.get(i_hist);
 
 	// residual
-	Matrix<float, n_y_vision, n_y_vision> S_I = inv<float, n_y_vision>((C * _P * C.transpose()) + R);
+	Matrix<float, n_y_vision, n_y_vision> S_I = inv<float, n_y_vision>(
+			(C * _P * C.transpose()) + R);
 	Matrix<float, n_y_vision, 1> r = y - C * x0;
 
 	// fault detection
@@ -102,7 +113,7 @@ void BlockLocalPositionEstimator::visionCorrect()
 	}
 
 	// kalman filter correction if no fault
-	if (_visionFault <  fault_lvl_disable) {
+	if (_visionFault < fault_lvl_disable) {
 		Matrix<float, n_x, n_y_vision> K = _P * C.transpose() * S_I;
 		Vector<float, n_x> dx = K * r;
 		correctionLogic(dx);
@@ -111,13 +122,13 @@ void BlockLocalPositionEstimator::visionCorrect()
 	}
 }
 
-void BlockLocalPositionEstimator::visionCheckTimeout()
-{
+void BlockLocalPositionEstimator::visionCheckTimeout() {
 	if (_timeStamp - _time_last_vision_p > VISION_TIMEOUT) {
 		if (_visionInitialized) {
 			_visionInitialized = false;
 			_visionStats.reset();
-			mavlink_log_critical(&mavlink_log_pub, "[lpe] vision position timeout ");
+			mavlink_log_critical(&mavlink_log_pub,
+					"[lpe] vision position timeout ");
 		}
 	}
 }

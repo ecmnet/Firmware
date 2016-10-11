@@ -371,6 +371,7 @@ private:
 	bool _altOriginInitialized;
 	float _baroAltOrigin;
 	float _gpsAltOrigin;
+	Vector3f _visionOrigin;
 
 	// status
 	bool _validXY;
