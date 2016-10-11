@@ -35,8 +35,9 @@ set(config_module_list
 	#drivers/hott/hott_sensors
 	drivers/blinkm
 	drivers/airspeed
-	drivers/ets_airspeed
-	drivers/meas_airspeed
+	#drivers/frsky_telemetry
+	#drivers/ets_airspeed
+	#drivers/meas_airspeed
 	#drivers/frsky_telemetry
 	modules/sensors
 	#drivers/mkblctrl
@@ -44,10 +45,10 @@ set(config_module_list
 	#drivers/oreoled
 	#drivers/vmount
 	drivers/pwm_input
-	drivers/camera_trigger
+	#drivers/camera_trigger
 	drivers/bst
-	drivers/snapdragon_rc_pwm
-	drivers/lis3mdl
+	#drivers/snapdragon_rc_pwm
+	#drivers/lis3mdl
 
 	#
 	# System commands
