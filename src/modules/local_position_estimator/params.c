@@ -132,7 +132,7 @@ PARAM_DEFINE_FLOAT(LPE_LDR_OFF_Z, 0.00f);
  * @max 2
  * @decimal 4
  */
-PARAM_DEFINE_FLOAT(LPE_ACC_XY, 0.0015f);
+PARAM_DEFINE_FLOAT(LPE_ACC_XY, 0.012f);
 
 /**
  * Accelerometer z noise density
@@ -145,7 +145,7 @@ PARAM_DEFINE_FLOAT(LPE_ACC_XY, 0.0015f);
  * @max 2
  * @decimal 4
  */
-PARAM_DEFINE_FLOAT(LPE_ACC_Z, 0.0015f);
+PARAM_DEFINE_FLOAT(LPE_ACC_Z, 0.02f);
 
 /**
  * Barometric presssure altitude z standard deviation.
@@ -153,7 +153,7 @@ PARAM_DEFINE_FLOAT(LPE_ACC_Z, 0.0015f);
  * @group Local Position Estimator
  * @unit m
  * @min 0.01
- * @max 3
+ * @max 20
  * @decimal 2
  */
 PARAM_DEFINE_FLOAT(LPE_BAR_Z, 3.0f);
