@@ -40,10 +40,10 @@ BlockLocalPositionEstimator::BlockLocalPositionEstimator() :
 	// mocap 50 hz
 	_sub_mocap(ORB_ID(att_pos_mocap), 1000 / 50, 0, &getSubscriptions()),
 	// all distance sensors, 10 hz
-	_sub_dist0(ORB_ID(distance_sensor), 1000 / 10, 0, &getSubscriptions()),
-	_sub_dist1(ORB_ID(distance_sensor), 1000 / 10, 1, &getSubscriptions()),
-	_sub_dist2(ORB_ID(distance_sensor), 1000 / 10, 2, &getSubscriptions()),
-	_sub_dist3(ORB_ID(distance_sensor), 1000 / 10, 3, &getSubscriptions()),
+	_sub_dist0(ORB_ID(distance_sensor), 1000 / 20, 0, &getSubscriptions()),
+	_sub_dist1(ORB_ID(distance_sensor), 1000 / 20, 1, &getSubscriptions()),
+	_sub_dist2(ORB_ID(distance_sensor), 1000 / 20, 2, &getSubscriptions()),
+	_sub_dist3(ORB_ID(distance_sensor), 1000 / 20, 3, &getSubscriptions()),
 	_dist_subs(),
 	_sub_lidar(NULL),
 	_sub_sonar(NULL),
