@@ -11,8 +11,8 @@ extern orb_advert_t mavlink_log_pub;
 // measurement it is initialized, we also don't want to deinitialize it because
 // this will throw away a correction before it starts using the data so we
 // set the timeout to 10 seconds
-static const uint32_t 		REQ_VISION_INIT_COUNT = 1;
-static const uint32_t 		VISION_TIMEOUT =    10000000;	// 10 s
+static const uint32_t 		REQ_VISION_INIT_COUNT = 5;
+static const uint32_t 		VISION_TIMEOUT =    500000;	// 0.5s
 
 void BlockLocalPositionEstimator::visionInit()
 {
@@ -26,22 +26,25 @@ void BlockLocalPositionEstimator::visionInit()
 
 	// increament sums for mean
 	if (_visionStats.getCount() > REQ_VISION_INIT_COUNT) {
-		mavlink_and_console_log_info(&mavlink_log_pub, "[lpe] vision position init: "
-					     "%5.2f %5.2f %5.2f m std %5.2f %5.2f %5.2f m",
-					     double(_visionStats.getMean()(0)),
-					     double(_visionStats.getMean()(1)),
-					     double(_visionStats.getMean()(2)),
-					     double(_visionStats.getStdDev()(0)),
-					     double(_visionStats.getStdDev()(1)),
-					     double(_visionStats.getStdDev()(2)));
-		_visionInitialized = true;
-		_visionFault = FAULT_NONE;
 
-		if (!_altOriginInitialized) {
-			_altOriginInitialized = true;
-			_altOrigin = 0;
+			_visionOrigin(Y_vision_x) = _visionStats.getMean()(Y_vision_x) - _x(X_x);
+			_visionOrigin(Y_vision_y) = _visionStats.getMean()(Y_vision_y) - _x(X_y);
+			_visionOrigin(Y_vision_z) = _visionStats.getMean()(Y_vision_z) - _x(X_z);
+
+			mavlink_and_console_log_info(&mavlink_log_pub,
+					"[lpe] vision position init: "
+							"%5.2f %5.2f %5.2f m",
+					double(_visionOrigin(Y_vision_x)),
+					double(_visionOrigin(Y_vision_y)),
+					double(_visionOrigin(Y_vision_z)));
+			_visionInitialized = true;
+			_visionFault = FAULT_NONE;
+
+			if (!_altOriginInitialized) {
+				_altOriginInitialized = true;
+				_altOrigin = 0;
+			}
 		}
-	}
 }
 
 int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
@@ -51,7 +54,7 @@ int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y)
 	y(Y_vision_y) = _sub_vision_pos.get().y;
 	y(Y_vision_z) = _sub_vision_pos.get().z;
 	_visionStats.update(y);
-	_time_last_vision_p = _sub_vision_pos.get().timestamp;
+	_time_last_vision_p = _timeStamp;
 	return OK;
 }
 
@@ -61,6 +64,9 @@ void BlockLocalPositionEstimator::visionCorrect()
 	Vector<float, n_y_vision> y;
 
 	if (visionMeasure(y) != OK) { return; }
+
+	// make measurement relative to origin
+	y =  y - _visionOrigin;
 
 	// vision measurement matrix, measures position
 	Matrix<float, n_y_vision, n_x> C;
