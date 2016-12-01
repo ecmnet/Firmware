@@ -208,9 +208,9 @@ private:
 AttitudeEstimatorQ::AttitudeEstimatorQ() :
 	_vel_prev(0, 0, 0),
 	_pos_acc(0, 0, 0),
-	_lp_accel_x(250.0f, 30.0f),
-	_lp_accel_y(250.0f, 30.0f),
-	_lp_accel_z(250.0f, 30.0f),
+	_lp_accel_x(250.0f, 20.0f),
+	_lp_accel_y(250.0f, 20.0f),
+	_lp_accel_z(250.0f, 20.0f),
 	_lp_gyro_x(250.0f, 30.0f),
 	_lp_gyro_y(250.0f, 30.0f),
 	_lp_gyro_z(250.0f, 30.0f)
