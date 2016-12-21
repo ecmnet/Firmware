@@ -44,21 +44,13 @@ void BlockLocalPositionEstimator::visionInit() {
 		_visionOrigin(Y_vision_z) = _visionStats.getMean()(Y_vision_z)
 				- _x(X_z);
 
-		mavlink_and_console_log_info(&mavlink_log_pub,
-				"[lpe] vision position init: "
-						"%5.2f %5.2f %5.2f m",
-				double(_visionOrigin(Y_vision_x)),
-				double(_visionOrigin(Y_vision_y)),
-				double(_visionOrigin(Y_vision_z)));
-		_visionInitialized = true;
-		_visionFault = FAULT_NONE;
 
 		if (!_altOriginInitialized) {
 			_altOriginInitialized = true;
 			_altOrigin = 0;
 		}
 	}
-}
+
 }
 
 int BlockLocalPositionEstimator::visionMeasure(Vector<float, n_y_vision> &y) {
