@@ -846,8 +846,6 @@ Mavlink::enable_flow_control(bool enabled)
 
 	int ret = tcgetattr(_uart_fd, &uart_config);
 
-#undef CRTS_IFLOW
-
 	if (enabled) {
 		uart_config.c_cflag |= CRTSCTS;
 
