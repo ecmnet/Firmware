@@ -12,7 +12,7 @@ extern orb_advert_t mavlink_log_pub;
 // this will throw away a correction before it starts using the data so we
 // set the timeout to 10 seconds
 static const uint32_t REQ_VISION_INIT_COUNT = 1;
-static const uint32_t VISION_TIMEOUT = 10000000;	// 10 s
+static const uint32_t VISION_TIMEOUT = 500000;	// 500ms
 
 void BlockLocalPositionEstimator::visionInit() {
 	// measure
