@@ -1326,15 +1326,15 @@ void EKF2::UpdateBaroSample(ekf2_timestamps_s &ekf2_timestamps)
 bool EKF2::UpdateExtVisionSample(ekf2_timestamps_s &ekf2_timestamps, vehicle_odometry_s &ev_odom)
 {
 	bool new_ev_odom = false;
-	const unsigned last_generation = _ev_odom_sub.get_last_generation();
+//	const unsigned last_generation = _ev_odom_sub.get_last_generation();
 
 	// EKF external vision sample
 	if (_ev_odom_sub.update(&ev_odom)) {
 
-		if (_ev_odom_sub.get_last_generation() != last_generation + 1) {
-			PX4_ERR("%d - vehicle_visual_odometry lost, generation %d -> %d", _instance, last_generation,
-				_ev_odom_sub.get_last_generation());
-		}
+//		if (_ev_odom_sub.get_last_generation() != last_generation + 1) {
+//			PX4_ERR("%d - vehicle_visual_odometry lost, generation %d -> %d", _instance, last_generation,
+//				_ev_odom_sub.get_last_generation());
+//		}
 
 		if (_param_ekf2_aid_mask.get() & (MASK_USE_EVPOS | MASK_USE_EVYAW | MASK_USE_EVVEL)) {
 
@@ -1553,26 +1553,36 @@ void EKF2::UpdateMagSample(ekf2_timestamps_s &ekf2_timestamps)
 
 void EKF2::UpdateRangeSample(ekf2_timestamps_s &ekf2_timestamps)
 {
-	if (!_distance_sensor_selected) {
-		// get subscription index of first downward-facing range sensor
-		uORB::SubscriptionMultiArray<distance_sensor_s> distance_sensor_subs{ORB_ID::distance_sensor};
 
-		for (unsigned i = 0; i < distance_sensor_subs.size(); i++) {
+	// get subscription index of first downward-facing range sensor
+	uORB::SubscriptionMultiArray<distance_sensor_s> distance_sensor_subs {
+			ORB_ID::distance_sensor };
+
+	// Search for the rangefinder with highest max_distance
+		int8_t selected_instance = -1;
+		for (int8_t i = 0; i < distance_sensor_subs.size(); i++) {
 			distance_sensor_s distance_sensor;
 
 			if (distance_sensor_subs[i].copy(&distance_sensor)) {
-				// only use the first instace which has the correct orientation
+				// use the instance with highest max distance property
 				if ((hrt_elapsed_time(&distance_sensor.timestamp) < 100_ms)
-				    && (distance_sensor.orientation == distance_sensor_s::ROTATION_DOWNWARD_FACING)) {
-
-					if (_distance_sensor_sub.ChangeInstance(i)) {
-						PX4_INFO("%d - selected distance_sensor:%d", _instance, i);
-						_distance_sensor_selected = true;
-					}
+						&& (distance_sensor.orientation
+								== distance_sensor_s::ROTATION_DOWNWARD_FACING)
+						&& (distance_sensor.max_distance
+								> _distance_max_distance)) {
+					_distance_max_distance = distance_sensor.max_distance;
+					selected_instance = i;
 				}
 			}
 		}
-	}
+
+		if (selected_instance >=0 && selected_instance != _distance_sensor_selected_instance
+				&& _distance_sensor_sub.ChangeInstance(selected_instance)) {
+			_distance_sensor_selected_instance = selected_instance;
+			PX4_INFO("%d - selected distance_sensor: %d with max_distance %dm",
+					_instance, selected_instance, _distance_max_distance);
+		}
+
 
 	// EKF range sample
 	const unsigned last_generation = _distance_sensor_sub.get_last_generation();
@@ -1605,8 +1615,10 @@ void EKF2::UpdateRangeSample(ekf2_timestamps_s &ekf2_timestamps)
 	}
 
 	if (hrt_elapsed_time(&_last_range_sensor_update) > 1_s) {
-		_distance_sensor_selected = false;
+		_distance_sensor_selected_instance = -1;
+		_distance_max_distance = 0;
 	}
+
 }
 
 void EKF2::UpdateMagCalibration(const hrt_abstime &timestamp)
