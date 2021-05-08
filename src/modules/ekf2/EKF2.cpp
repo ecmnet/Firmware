@@ -1330,15 +1330,15 @@ void EKF2::UpdateBaroSample(ekf2_timestamps_s &ekf2_timestamps)
 bool EKF2::UpdateExtVisionSample(ekf2_timestamps_s &ekf2_timestamps, vehicle_odometry_s &ev_odom)
 {
 	bool new_ev_odom = false;
-	const unsigned last_generation = _ev_odom_sub.get_last_generation();
+//	const unsigned last_generation = _ev_odom_sub.get_last_generation();
 
 	// EKF external vision sample
 	if (_ev_odom_sub.update(&ev_odom)) {
 
-		if (_ev_odom_sub.get_last_generation() != last_generation + 1) {
-			PX4_ERR("%d - vehicle_visual_odometry lost, generation %d -> %d", _instance, last_generation,
-				_ev_odom_sub.get_last_generation());
-		}
+//		if (_ev_odom_sub.get_last_generation() != last_generation + 1) {
+//			PX4_ERR("%d - vehicle_visual_odometry lost, generation %d -> %d", _instance, last_generation,
+//				_ev_odom_sub.get_last_generation());
+//		}
 
 		if (_param_ekf2_aid_mask.get() & (MASK_USE_EVPOS | MASK_USE_EVYAW | MASK_USE_EVVEL)) {
 
